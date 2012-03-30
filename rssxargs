@@ -1,0 +1,118 @@
+#!/usr/bin/python
+"""
+A simple RSS feed parser that executes a command for each new feed item.
+
+Example use:
+  rssxargs -u http://www.somesite.com/rss.xml -e "echo %link% | mail me@gmail.com -s \"New item posted: %title%\""
+
+Note that this is potentially a *VERY* dangerous command. 
+The arguments provided to the command you provide come from potenteially
+untrusted internet sources. Be very careful what you do with this.
+
+To try to limit the impact someone might have with this app, we strip out some potentially dangerous characters.
+"""
+import feedparser
+import hashlib
+import optparse
+import os
+import pickle
+import re
+import sys
+import time
+
+usage = "usage: %prog [options] <command>\n\nRuns a command for every new entry that appears in an RSS feed."
+parser = optparse.OptionParser()
+parser.add_option("-u", "--url", dest="url", metavar="URL",
+                  type="string", help="RSS Feed URL", default="")
+parser.add_option("-e", "--execute", dest="cmd", 
+                  metavar="COMMAND", default="",
+                  type="string", help="The command to run for each RSS entry.")
+parser.add_option("-s", "--sleep_time", dest="sleep_seconds", 
+                  metavar="SECONDS", default=120,
+                  type="int", help="Time to sleep between RSS fetches.")
+parser.add_option("-n", "--nodaemonize", dest="daemonize", action="store_false",
+                  default=True, help="Don't fork.")
+parser.add_option("-d", "--debug", dest="debug", action="store_true",
+                  default=False, help="Don't sleep and don't loop.")
+parser.add_option("-c", "--cache_dir", dest="cache_dir", 
+                  metavar="DIR", default="~/.cache/rssxargs",
+                  type="string", help="Override default cache directory.")
+options, args = parser.parse_args()
+if len(options.url) == 0:
+  parser.error("You must provide an RSS Feed URL")
+if len(options.cmd) == 0:
+  parser.error("You must provide a command to run.")
+options.cache_dir = os.path.expanduser(options.cache_dir)
+
+def get_previous_feed(url):
+  """ 
+  Attempts to read serialized result of last run from disk. 
+  Returns None if this URL is new, a dict() otherwise.
+  """
+  try:
+    return pickle.load(
+        open(os.path.join(options.cache_dir, hashlib.md5(url).hexdigest()), "rb"))
+  except Exception:
+    return None
+
+def fetch_feed(url):
+  """
+  Wraps feedparser.parse() so we can keep a cached copy of the feed to
+  identify entries we've seen before.
+  """
+  res = feedparser.parse(url)
+  if "bozo_exception" in res:
+    print >> sys.stderr, "E: Failed to fetch feed. Exception:"
+    print >> sys.stderr, res["bozo_exception"]
+    return None
+  try:
+    os.makedirs(options.cache_dir)
+  except Exception:
+    pass
+  try:
+    pickle.dump(res, 
+        open(os.path.join(options.cache_dir, hashlib.md5(url).hexdigest()), "w+b"))
+  except Exception, e:
+    print >> sys.stderr, "W: Failed to cache state. Next run may include old items."
+    print >> sys.stderr, e
+  return res
+
+def run_command(entry):
+  """ Runs command provide in options for the given RSS entry. """
+  def lookup_template_arg(matchobj):
+    key = matchobj.group(1)
+    if len(key) == 0 or key[0] == "_":
+      return ""
+    if key in entry:
+      # Filter out some bad stuff.
+      return re.sub(r'(\.\.|[\|;\(\)])', '', entry[key])
+    return matchobj.group(0)
+  cmdline = re.sub('%([^%]*)%', lookup_template_arg, options.cmd)
+  os.system(cmdline)
+
+def main():
+
+  previous_feed = get_previous_feed(options.url)
+  while True:
+    feed = fetch_feed(options.url)
+    if feed is None:
+      print sys.stderr, "E: Feed fetch failed."
+      sys.exit(1)
+    for entry in feed.entries:
+      if previous_feed and entry in previous_feed.entries:
+        continue
+      run_command(entry)
+    if options.debug:
+      break
+    time.sleep(options.sleep_seconds)
+    
+if __name__ == "__main__":
+  if options.daemonize:
+    try:
+      pid = os.fork()
+      if pid == 0:
+        main()
+    except:
+      print >> sys.stderr, "Daemonize failed."
+  else:
+    main()

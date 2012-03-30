@@ -1,0 +1,13 @@
+rssxargs
+========
+
+This is a small program that periodically fetches an RSS feed and for every new item it finds in the feed it calls a command. 
+
+The command can include templatized references to title, link and other fields in the RSS entry.
+
+Examples:
+
+  rssxargs -u http://www.abc.net.au/jazz/xml/ABC%20JazzJustPlayedRSS.xml -e "echo \"%title%\" >> /tmp/abcjazz_playlist.txt"
+  rssxargs -u http://feeds.nytimes.com/nyt/rss/Arts -e "echo \"%link%\" | mail me@mymail.com -s \"New NYT article: %title%\""
+
+This command can be *very* dangerous as the command line is generated from untrusted data. Use with caution! I've added some basic character filters to template substitution output but a better job could certainly be done. (Feel free to send me patches.)
