@@ -105,6 +105,7 @@ def main():
     if options.debug:
       break
     time.sleep(options.sleep_seconds)
+    previous_feed = feed
     
 if __name__ == "__main__":
   if options.daemonize:
