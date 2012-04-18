@@ -10,6 +10,9 @@ The arguments provided to the command you provide come from potenteially
 untrusted internet sources. Be very careful what you do with this.
 
 To try to limit the impact someone might have with this app, we strip out some potentially dangerous characters.
+
+Daemonize code lifted from:
+  http://code.activestate.com/recipes/278731-creating-a-daemon-the-python-way/
 """
 import feedparser
 import hashlib
@@ -17,6 +20,7 @@ import optparse
 import os
 import pickle
 import re
+import signal
 import sys
 import time
 
@@ -90,6 +94,56 @@ def run_command(entry):
   cmdline = re.sub('%([^%]*)%', lookup_template_arg, options.cmd)
   os.system(cmdline)
 
+UMASK = 0
+WORKDIR = "/tmp"
+MAXFD = 1024
+REDIRECT_TO = os.devnull
+
+def create_daemon():
+  """
+  Detach a process from the controlling terminal and run it in the
+  background as a daemon.
+  """
+   try:
+      pid = os.fork()
+   except OSError, e:
+      raise Exception, "%s [%d]" % (e.strerror, e.errno)
+
+   if (pid == 0):	# The first child.
+      os.setsid()
+      signal.signal(signal.SIGHUP, signal.SIG_IGN)
+
+      try:
+         pid = os.fork()	# Fork a second child.
+      except OSError, e:
+         raise Exception, "%s [%d]" % (e.strerror, e.errno)
+
+      if (pid == 0):	# The second child.
+         os.chdir(WORKDIR)
+         os.umask(UMASK)
+      else:
+         os._exit(0)	# Exit parent (the first child) of the second child.
+   else:
+      os._exit(0)	# Exit parent of the first child.
+
+   import resource		# Resource usage information.
+   maxfd = resource.getrlimit(resource.RLIMIT_NOFILE)[1]
+   if (maxfd == resource.RLIM_INFINITY):
+      maxfd = MAXFD
+  
+   # Iterate through and close all file descriptors.
+   for fd in range(0, maxfd):
+      try:
+         os.close(fd)
+      except OSError:	# ERROR, fd wasn't open to begin with (ignored)
+         pass
+
+   os.open(REDIRECT_TO, os.O_RDWR)	# standard input (0)
+   os.dup2(0, 1)			# standard output (1)
+   os.dup2(0, 2)			# standard error (2)
+
+   return(0)
+
 def main():
 
   previous_feed = get_previous_feed(options.url)
@@ -109,11 +163,5 @@ def main():
     
 if __name__ == "__main__":
   if options.daemonize:
-    try:
-      pid = os.fork()
-      if pid == 0:
-        main()
-    except:
-      print >> sys.stderr, "Daemonize failed."
-  else:
-    main()
+    create_daemon()
+  main()
