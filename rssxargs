@@ -3,7 +3,8 @@
 A simple RSS feed parser that executes a command for each new feed item.
 
 Example use:
-  rssxargs -u http://www.somesite.com/rss.xml -e "echo %link% | mail me@gmail.com -s \"New item posted: %title%\""
+  rssxargs -u http://www.somesite.com/rss.xml -F ".*Type: j.*" \
+           -e "echo %link% | mail me@gmail.com -s \"New item posted: %title%\""
 
 Note that this is potentially a *VERY* dangerous command. 
 The arguments provided to the command you provide come from potenteially
@@ -38,6 +39,12 @@ parser.add_option("-n", "--nodaemonize", dest="daemonize", action="store_false",
                   default=True, help="Don't fork.")
 parser.add_option("-d", "--debug", dest="debug", action="store_true",
                   default=False, help="Don't sleep and don't loop.")
+parser.add_option("-f", "--filter_field", dest="filter_field", 
+                  metavar="FILTER_FIELD", default="value",
+                  type="string", help="Optional field to filter.")
+parser.add_option("-F", "--filter_expr", dest="filter_expr", 
+                  metavar="FILTER_EXPR", default=".*", type="string", 
+                  help="Regular expression to apply to filter field.")
 parser.add_option("-c", "--cache_dir", dest="cache_dir", 
                   metavar="DIR", default="~/.cache/rssxargs",
                   type="string", help="Override default cache directory.")
@@ -162,7 +169,8 @@ def main():
     for entry in feed.entries:
       if previous_feed and entry in previous_feed.entries:
         continue
-      run_command(entry)
+      if options.filter_expr == ".*" or re.match(options.filter_expr, entry.get(options.filter_field, "")):
+        run_command(entry)
     if options.debug:
       break
     time.sleep(options.sleep_seconds)
