@@ -97,7 +97,10 @@ def run_command(entry):
     if key in entry:
       # Filter out some bad stuff.
       return re.sub(r'(\.\.|[\|;\(\)])', '', entry[key])
-    return matchobj.group(0)
+    else:
+      print >> sys.stderr, "E: No such field '%s'. Available fields: %s" % (key, entry.keys())
+      sys.exit(1)
+    #return matchobj.group(0)
   cmdline = re.sub('%([^%]*)%', lookup_template_arg, options.cmd)
   os.system(cmdline)
 
